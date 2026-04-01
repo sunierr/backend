@@ -1,18 +1,21 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
-const NodeRSA = require('node-rsa');
 const path = require('path');
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 80;
 
 app.use(cors());
 app.use(express.json());
 
-app.use(express.static(path.join(__dirname, './dist')));
+app.use('/encrypt', express.static(path.join(__dirname, './dist')));
+
+app.get('/encrypt', (req, res) => {
+  res.sendFile(path.join(__dirname, './dist/index.html'));
+});
 
 let encryptedRecords = [];
 const MAX_RECORDS = 10;
@@ -24,26 +27,29 @@ if (!publicKeyPem) {
   process.exit(1);
 }
 
-const key = new NodeRSA();
-key.importKey(publicKeyPem, 'pkcs8-public-pem');
+app.get('/api/public-key', (req, res) => {
+  res.json({ publicKey: publicKeyPem });
+});
 
-app.post('/api/encrypt', (req, res) => {
+app.get('/api/records', (req, res) => {
+  res.json({ records: encryptedRecords });
+});
+
+app.post('/api/records', (req, res) => {
   try {
-    const { text } = req.body;
+    const { encryptedText } = req.body;
     
-    if (!text || typeof text !== 'string') {
-      return res.status(400).json({ error: '请提供有效的文本' });
+    if (!encryptedText || typeof encryptedText !== 'string') {
+      return res.status(400).json({ error: '请提供有效的加密文本' });
     }
 
     if (encryptedRecords.length >= MAX_RECORDS) {
       return res.status(400).json({ error: '已达到最大记录数限制（10条）' });
     }
-
-    const encrypted = key.encrypt(text, 'base64');
     
     const record = {
       id: Date.now().toString(),
-      encryptedText: encrypted,
+      encryptedText: encryptedText,
       createdAt: new Date().toISOString()
     };
 
@@ -52,16 +58,12 @@ app.post('/api/encrypt', (req, res) => {
     res.json({ 
       success: true, 
       record,
-      message: '加密成功' 
+      message: '保存成功' 
     });
   } catch (error) {
-    console.error('加密错误：', error);
-    res.status(500).json({ error: '加密失败' });
+    console.error('保存错误：', error);
+    res.status(500).json({ error: '保存失败' });
   }
-});
-
-app.get('/api/records', (req, res) => {
-  res.json({ records: encryptedRecords });
 });
 
 app.delete('/api/records/:id', (req, res) => {
@@ -90,5 +92,5 @@ app.listen(PORT, () => {
 });
 
 app.use((req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
+  res.redirect('/encrypt');
 });
